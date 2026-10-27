@@ -1,0 +1,6 @@
+vosk>=0.3.44
+flask>=3.0
+torch>=2.6
+transformers>=4.50
+numpy
+# plus the espeak-ng command line tool: brew install espeak-ng / apt install espeak-ng

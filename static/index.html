@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Say the Word</title>
+<style>
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { font-family: system-ui, sans-serif; margin: 0; background: #f6f7f9; color: #222; }
+
+  /* One-screen layout: header on top, picture grid left, practice panel right. */
+  .app { height: 100vh; display: grid; grid-template-rows: auto 1fr; gap: 12px; padding: 12px 16px; max-width: 1280px; margin: 0 auto; }
+  header { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  h1 { font-size: 20px; margin: 0; }
+  .langs button { font-size: 15px; padding: 5px 12px; margin-right: 4px; border: 1px solid #bbb; border-radius: 6px; background: #fff; cursor: pointer; }
+  .langs button.active { background: #2563eb; color: #fff; border-color: #2563eb; }
+  .engines { display: flex; gap: 6px; margin-left: auto; font-size: 14px; color: #555; align-items: center; }
+  .engines label { display: flex; align-items: center; gap: 4px; padding: 4px 10px; border: 1px solid #ccc; border-radius: 16px; background: #fff; cursor: pointer; user-select: none; }
+  .engines label:has(input:checked) { border-color: #16a34a; background: #f0fdf4; }
+  .ms { font-variant-numeric: tabular-nums; color: #2563eb; }
+  .timing { font-size: 13px; color: #888; margin-bottom: 4px; }
+  main { display: grid; grid-template-columns: minmax(260px, 380px) 1fr; gap: 16px; min-height: 0; }
+
+  .grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; align-content: start; overflow: auto; }
+  .card { position: relative; font-size: clamp(30px, 6vh, 52px); aspect-ratio: 1; display: flex; align-items: center; justify-content: center; background: #fff; border: 2px solid #ddd; border-radius: 10px; cursor: pointer; }
+  .card.active { border-color: #2563eb; }
+  .card .done { position: absolute; top: 2px; right: 4px; font-size: 13px; }
+
+  .stage { background: #fff; border-radius: 10px; padding: 12px 16px; text-align: center; overflow: auto; align-self: start; max-height: 100%; }
+  .empty { display: flex; align-items: center; justify-content: center; min-height: 300px; color: #888; font-size: 20px; }
+  .picture { font-size: clamp(56px, 13vh, 120px); line-height: 1.1; }
+  .hint { font-size: 20px; color: #666; min-height: 26px; }
+  .controls button { font-size: 18px; padding: 10px 22px; margin: 4px; border: 0; border-radius: 40px; cursor: pointer; background: #e5e7eb; }
+  #rec { background: #16a34a; color: #fff; }
+  #rec.recording { background: #dc2626; }
+
+  .verdict { font-size: 24px; font-weight: bold; margin: 8px 0 2px; }
+  .correct { color: #16a34a; } .close { color: #d97706; } .wrong, .silence { color: #dc2626; }
+  .rows { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin-top: 6px; }
+  .row { background: #f9fafb; border-radius: 8px; padding: 8px; }
+  .row-title { font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: #888; }
+  .letters { font-size: 28px; letter-spacing: 2px; margin: 2px 0; }
+  .letters span { padding: 0 2px; border-radius: 4px; }
+  .phonemes { font-size: 26px; margin: 2px 0; font-family: "Charis SIL", "Doulos SIL", "Gentium", serif; }
+  .phonemes span { padding: 0 4px; margin: 0 1px; border-radius: 4px; }
+  .l-ok { color: #16a34a; } .l-wrong { background: #fecaca; } .l-missing { color: #aaa; text-decoration: line-through; } .l-extra { background: #fde68a; }
+  .l-unsure { background: #fed7aa; }
+  .gop { display: inline-flex; flex-direction: column; align-items: center; margin: 0 1px; padding: 0 3px; border-radius: 4px; font-size: 26px; font-family: "Charis SIL", "Doulos SIL", "Gentium", serif; }
+  .gop small { font-size: 11px; font-family: system-ui, sans-serif; color: #666; text-decoration: none; }
+  .details { color: #555; font-size: 14px; }
+  .legend { margin: 6px 0 2px; }
+  pre { text-align: left; font-size: 12px; background: #f3f4f6; padding: 8px; overflow: auto; }
+
+  /* Narrow screens: stack and let the page scroll normally. */
+  @media (max-width: 760px) {
+    .app { height: auto; }
+    main { grid-template-columns: 1fr; }
+    .grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+    .rows { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>Say the word</h1>
+    <div class="langs" id="langs"></div>
+    <div class="engines" id="engines">Models:</div>
+  </header>
+  <main>
+    <div class="grid" id="grid"></div>
+    <section class="stage">
+      <div class="empty" id="empty">👈 Pick a picture</div>
+      <div id="stage" hidden>
+        <div class="picture" id="picture"></div>
+        <div class="hint" id="hint"></div>
+        <div class="controls">
+          <button id="rec">🎤 Start</button>
+          <button id="listen">🔊 Listen</button>
+          <button id="showHint">Show word</button>
+        </div>
+        <div id="result"></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script>
+const LEGEND = { correct: "✅ Correct", close: "🟡 Almost", wrong: "❌ Try again", silence: "🤫 Nothing heard" };
+const TTS_LANG = { en: "en-US", uk: "uk-UA", es: "es-ES", it: "it-IT", de: "de-DE" };
+const ENGINES = { word: "Word · Vosk", phonemes: "Sounds · wav2vec2", pronunciation: "Score · GOP", spelling: "Letters · MMS" };
+let data, lang = "en", card = null, recorder = null, chunks = [];
+let engines = loadEngines();
+const done = {}; // "lang:id" -> verdict
+const $ = id => document.getElementById(id);
+
+// Switched-off models are remembered per browser (so newly added models start on);
+// storage may be unavailable, so fall back to all on.
+function loadEngines() {
+  let off = [];
+  try { off = JSON.parse(localStorage.getItem("enginesOff")) || []; } catch {}
+  const on = Object.keys(ENGINES).filter(k => !off.includes(k));
+  return on.length ? on : Object.keys(ENGINES);
+}
+
+function renderEngines() {
+  for (const [key, label] of Object.entries(ENGINES)) {
+    const l = document.createElement("label");
+    l.innerHTML = `<input type="checkbox" ${engines.includes(key) ? "checked" : ""}> ${label}`;
+    l.querySelector("input").onchange = e => {
+      const next = Object.keys(ENGINES).filter(k => k === key ? e.target.checked : engines.includes(k));
+      if (!next.length) { e.target.checked = true; return; } // keep at least one model on
+      engines = next;
+      const off = Object.keys(ENGINES).filter(k => !engines.includes(k));
+      try { localStorage.setItem("enginesOff", JSON.stringify(off)); } catch {}
+    };
+    $("engines").appendChild(l);
+  }
+}
+
+async function init() {
+  renderEngines();
+  data = await (await fetch("/api/words")).json();
+  for (const [code, name] of Object.entries(data.languages)) {
+    const b = document.createElement("button");
+    b.textContent = name;
+    b.onclick = () => { lang = code; render(); if (card) select(card); };
+    b.dataset.code = code;
+    $("langs").appendChild(b);
+  }
+  render();
+}
+
+function render() {
+  document.querySelectorAll(".langs button").forEach(b => b.classList.toggle("active", b.dataset.code === lang));
+  $("grid").innerHTML = "";
+  for (const w of data.words) {
+    const d = document.createElement("div");
+    d.className = "card" + (card && card.id === w.id ? " active" : "");
+    const v = done[lang + ":" + w.id];
+    d.innerHTML = `${w.picture}<span class="done">${v ? LEGEND[v].split(" ")[0] : ""}</span>`;
+    d.onclick = () => select(w);
+    $("grid").appendChild(d);
+  }
+}
+
+function select(w) {
+  card = w;
+  $("empty").hidden = true;
+  $("stage").hidden = false;
+  $("picture").textContent = w.picture;
+  $("hint").textContent = "";
+  $("result").innerHTML = "";
+  render();
+}
+
+$("showHint").onclick = () => $("hint").textContent = card[lang];
+$("listen").onclick = () => {
+  const u = new SpeechSynthesisUtterance(card[lang]);
+  u.lang = TTS_LANG[lang];
+  speechSynthesis.speak(u);
+};
+
+// Record with MediaRecorder, then decode + resample to 16 kHz mono PCM in the browser.
+$("rec").onclick = async () => {
+  if (recorder && recorder.state === "recording") { recorder.stop(); return; }
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  recorder = new MediaRecorder(stream);
+  chunks = [];
+  recorder.ondataavailable = e => chunks.push(e.data);
+  recorder.onstop = async () => {
+    stream.getTracks().forEach(t => t.stop());
+    $("rec").textContent = "🎤 Start";
+    $("rec").classList.remove("recording");
+    $("result").innerHTML = "<p>Analyzing…</p>";
+    const started = performance.now();
+    const pcm = await toPcm16k(new Blob(chunks));
+    const res = await fetch(`/api/check?lang=${lang}&word=${card.id}&engines=${engines.join(",")}`, { method: "POST", body: pcm });
+    const r = await res.json();
+    showResult(r, Math.round(performance.now() - started));
+  };
+  recorder.start();
+  $("rec").textContent = "⏹ Stop";
+  $("rec").classList.add("recording");
+  const current = recorder; // safety stop for THIS recording only, not a later one
+  setTimeout(() => current.state === "recording" && current.stop(), 6000);
+};
+
+async function toPcm16k(blob) {
+  const ctx = new AudioContext();
+  const decoded = await ctx.decodeAudioData(await blob.arrayBuffer());
+  ctx.close();
+  const offline = new OfflineAudioContext(1, Math.ceil(decoded.duration * 16000), 16000);
+  const src = offline.createBufferSource();
+  src.buffer = decoded;
+  src.connect(offline.destination);
+  src.start();
+  const samples = (await offline.startRendering()).getChannelData(0);
+  const pcm = new Int16Array(samples.length);
+  for (let i = 0; i < samples.length; i++) pcm[i] = Math.max(-1, Math.min(1, samples[i])) * 0x7fff;
+  return pcm.buffer;
+}
+
+const spans = items => items.map(i => `<span class="l-${i.status}">${i.symbol}</span>`).join("");
+const pct = x => Math.round(x * 100) + "%";
+
+const ms = x => `<span class="ms">${x < 1000 ? x + " ms" : (x / 1000).toFixed(1) + " s"}</span>`;
+
+// One box per enabled model; a model that was off has no section in the response.
+const ROWS = {
+  word: w => `
+    <div class="letters">${spans(w.letters)}</div>
+    <div class="details">
+      Heard: <b>${w.heard || "—"}</b> ${w.heard_words.length ? `· confidence: ${w.heard_words.map(x => `${x.word} (${pct(x.conf)})`).join(", ")}` : ""}<br>
+      Other candidates: ${w.alternatives.slice(1).join(", ") || "—"} ·
+      Closed-set check: ${w.closed_set.map(x => x.word).join(" ") || "—"}
+    </div>`,
+  phonemes: p => `
+    <div class="phonemes">${spans(p.diff)}</div>
+    <div class="details">Expected: /${p.expected.join(" ")}/ · Heard: /${p.heard.join(" ") || "—"}/</div>`,
+  pronunciation: (g, r) => `
+    <div>${g.phonemes.map(p => `<span class="gop l-${p.status}" title="GOP ${p.gop}${p.instead ? " · heard: " + p.instead : p.status === "missing" ? " · not heard" : ""}">${p.symbol}<small>${p.gop > 0 ? "+" : ""}${p.gop}</small></span>`).join("")}</div>
+    <div class="details">score per expected sound: ≥ 0 good, &lt; −2 likely wrong (uncalibrated)
+      ${r.word && r.verdict === "wrong" ? "<br><b>different word said: sound scores not meaningful</b>" : ""}</div>`,
+  spelling: s => `
+    <div class="letters">${spans(s.diff)}</div>
+    <div class="details">Heard: <b>${s.heard || "—"}</b><br>spelled as heard, no dictionary</div>`,
+};
+
+function showResult(r, roundTripMs) {
+  done[lang + ":" + card.id] = r.verdict;
+  render();
+  const rows = Object.keys(ROWS).filter(k => r[k]).map(k => `
+    <div class="row">
+      <div class="row-title">${ENGINES[k]}${k === "word" ? "" : ` · ${pct(r[k].similarity)} ${k === "pronunciation" ? "sounds ok" : "match"}`} · ${ms(r[k].latency_ms)}</div>
+      ${ROWS[k](r[k], r)}
+    </div>`).join("");
+  $("result").innerHTML = `
+    <div class="verdict ${r.verdict}">${LEGEND[r.verdict]}</div>
+    <div class="timing">Expected: <b>${r.target}</b> · models ${ms(r.latency_ms)} · total incl. upload ${ms(roundTripMs)}</div>
+    <div class="rows">${rows}</div>
+
+    <p class="details legend"><span class="l-ok">ok</span> · <span class="l-unsure">unsure</span> · <span class="l-wrong">heard instead</span> ·
+      <span class="l-missing">missing</span> · <span class="l-extra">extra</span></p>
+    <details><summary>Raw response</summary><pre>${JSON.stringify(r, null, 2)}</pre></details>`;
+}
+
+init();
+</script>
+</body>
+</html>
